@@ -28,6 +28,11 @@ const handleApiError = (error, defaultMessage) => {
   }
 };
 
+export const checkAuthentication = () => {
+  const token = localStorage.getItem('token');
+  return !!token;
+};
+
 // Login function (saves user_id and token to local storage)
 export const login = async (email, password) => {
   try {

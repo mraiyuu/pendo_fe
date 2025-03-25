@@ -1,5 +1,5 @@
 <template>
-  <main class="dashboard">
+  <main class="dashboard" v-if="isAuthenticated">
     <!-- Header -->
     <header class="header">
       <h1>Your Tasks</h1>
@@ -8,7 +8,7 @@
 
     <!-- Task List -->
     <section v-if="loading" class="loading">Loading tasks...</section>
-    <section v-else class="task-list">
+    <section v-else-if="tasks.length" class="task-list">
       <div v-for="task in tasks" :key="task.task_id" class="task-card" @click="openEditModal(task)">
         <div class="task-content">
           <h3>{{ task.title }}</h3>
@@ -20,9 +20,12 @@
         </div>
       </div>
     </section>
+    <section v-else class="no-tasks">
+      <p>No tasks found. Create your first task!</p>
+    </section>
 
     <!-- Pagination -->
-    <footer class="pagination" v-if="!loading">
+    <footer class="pagination" v-if="!loading && tasks.length">
       <button @click="prevPage" :disabled="page <= 1" class="page-btn">← Prev</button>
       <span>Page {{ page }} of {{ totalPages }}</span>
       <button @click="nextPage" :disabled="page >= totalPages" class="page-btn">Next →</button>
@@ -54,12 +57,25 @@
       </div>
     </div>
   </main>
+
+  <!-- Login Prompt if Not Authenticated -->
+  <div v-else class="login-prompt">
+    <h2>Please Log In</h2>
+    <div class="login-actions">
+      <button @click="navigateToLogin" class="login-btn">Login</button>
+      <button @click="navigateToRegister" class="register-btn">Register Account</button>
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { fetchTasks, createTask, updateTask, deleteTask as apiDeleteTask } from '../api/task';
-import { logoutUser } from '../api/auth';
+import { logoutUser, checkAuthentication, getToken } from '../api/auth';
+
+// Router
+const router = useRouter();
 
 // State
 const tasks = ref([]);
@@ -69,16 +85,58 @@ const totalPages = ref(1);
 const showModal = ref(false);
 const editingTask = ref(null);
 const taskForm = ref({ title: '', description: '', due_date: '' });
+const isAuthenticated = ref(false);
+
+// Authentication Check
+const checkAuth = async () => {
+  try {
+    isAuthenticated.value = checkAuthentication();
+    
+    if (isAuthenticated.value) {
+      await loadTasks();
+    }
+  } catch (error) {
+    console.error('Authentication check failed:', error);
+    isAuthenticated.value = false;
+  }
+};
+
+// Navigation Methods
+const navigateToLogin = () => {
+  router.push('/login');
+};
+
+const navigateToRegister = () => {
+  router.push('/register');
+};
 
 // Load Tasks
 const loadTasks = async () => {
   loading.value = true;
   try {
-    const { tasks: fetchedTasks, pagination } = await fetchTasks({ page: page.value, per_page: 5 });
-    tasks.value = fetchedTasks;
-    totalPages.value = pagination.total_pages;
+    const token = getToken();
+    
+    // Configure axios to use the token
+    const config = {
+      headers: { 
+        Authorization: `Bearer ${token}` 
+      },
+      params: {
+        page: page.value,
+        per_page: 5
+      }
+    };
+
+    const response = await fetchTasks(config);
+    
+    tasks.value = response.tasks || [];
+    totalPages.value = response.pagination?.total_pages || 1;
   } catch (error) {
     console.error('Error loading tasks:', error);
+    // Handle authentication errors
+    if (error.response && error.response.status === 401) {
+      logout();
+    }
   } finally {
     loading.value = false;
   }
@@ -90,11 +148,13 @@ const openCreateModal = () => {
   taskForm.value = { title: '', description: '', due_date: '' };
   showModal.value = true;
 };
+
 const openEditModal = (task) => {
   editingTask.value = task;
   taskForm.value = { ...task };
   showModal.value = true;
 };
+
 const closeModal = () => {
   showModal.value = false;
 };
@@ -102,10 +162,17 @@ const closeModal = () => {
 // Submit Task
 const submitTask = async () => {
   try {
+    const token = getToken();
+    const config = {
+      headers: { 
+        Authorization: `Bearer ${token}` 
+      }
+    };
+
     if (editingTask.value) {
-      await updateTask(editingTask.value.task_id, taskForm.value);
+      await updateTask(editingTask.value.task_id, taskForm.value, config);
     } else {
-      await createTask(taskForm.value);
+      await createTask(taskForm.value, config);
     }
     closeModal();
     loadTasks();
@@ -118,7 +185,14 @@ const submitTask = async () => {
 const deleteTask = async (taskId) => {
   if (confirm('Delete this task?')) {
     try {
-      await apiDeleteTask(taskId);
+      const token = getToken();
+      const config = {
+        headers: { 
+          Authorization: `Bearer ${token}` 
+        }
+      };
+
+      await apiDeleteTask(taskId, config);
       loadTasks();
     } catch (error) {
       console.error('Error deleting task:', error);
@@ -129,7 +203,8 @@ const deleteTask = async (taskId) => {
 // Logout
 const logout = async () => {
   await logoutUser();
-  window.location.href = '/login';
+  isAuthenticated.value = false;
+  router.push('/login');
 };
 
 // Pagination
@@ -139,6 +214,7 @@ const nextPage = () => {
     loadTasks();
   }
 };
+
 const prevPage = () => {
   if (page.value > 1) {
     page.value--;
@@ -151,7 +227,14 @@ const getStatus = (task) => (new Date(task.due_date) < new Date() ? 'Overdue' : 
 const statusClass = (task) => (new Date(task.due_date) < new Date() ? 'status overdue' : 'status');
 
 // Init
-onMounted(loadTasks);
+onMounted(checkAuth);
+
+// Watch for changes in authentication
+watch(isAuthenticated, (newValue) => {
+  if (newValue) {
+    loadTasks();
+  }
+});
 </script>
 
 <style scoped>
