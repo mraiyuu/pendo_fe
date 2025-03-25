@@ -19,7 +19,6 @@
   const router = useRouter();
   const task = ref(null);
   
-  // Simulate fetching task details (replace with API call later)
   const fetchTaskDetails = async () => {
     const mockTasks = [
       { id: 1, title: 'Sample Task 1', description: 'Task description here', due_date: '2025-04-01' },
