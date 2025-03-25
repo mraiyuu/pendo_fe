@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const apiUrl = process.env.VUE_APP_BACKEND_URL;
 
-// Ensure the backend URL is configured
+
 if (!apiUrl) {
   console.error('Backend URL is not defined. Please check your .env file.');
   throw new Error('Backend URL is not configured');
@@ -14,7 +14,6 @@ const apiClient = axios.create({
   baseURL: apiUrl,
 });
 
-// Helper to handle errors consistently
 const handleApiError = (error, defaultMessage) => {
   if (error.response?.data) {
     const { responseCode = '1', responseMessage = defaultMessage, errorMessage = 'An unexpected error occurred' } = error.response.data;
@@ -33,7 +32,7 @@ export const checkAuthentication = () => {
   return !!token;
 };
 
-// Login function (saves user_id and token to local storage)
+
 export const login = async (email, password) => {
   try {
     const formData = new FormData();
@@ -42,7 +41,7 @@ export const login = async (email, password) => {
 
     const { data } = await apiClient.post('/loginUser', formData);
 
-    // Save user_id and token to local storage
+    
     if (data?.user?.user_id && data?.token) {
       localStorage.setItem('user_id', data.user.user_id);
       localStorage.setItem('email', data.user.email);
@@ -57,7 +56,6 @@ export const login = async (email, password) => {
   }
 };
 
-// Logout function{clears local storage}
 export const logoutUser = async () => {
   try {
     const token = localStorage.getItem('token');
@@ -81,8 +79,6 @@ export const logoutUser = async () => {
     handleApiError(error, 'Logout failed');
   }
 };
-// Helper to get user_id from local storage
 export const getUserId = () => localStorage.getItem('user_id');
 
-// Helper to get token from local storage
 export const getToken = () => localStorage.getItem('token');

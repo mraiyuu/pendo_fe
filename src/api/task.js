@@ -30,11 +30,11 @@ const handleApiError = (error, defaultMessage) => {
   }
 };
 
-// Updated createTask function to include email
+
 export const createTask = async (taskData) => {
   try {
     const userId = getUserId();
-    const userEmail = localStorage.getItem('email'); // Retrieve email from local storage
+    const userEmail = localStorage.getItem('email'); 
 
     if (!userId) throw new Error('User ID not found. Please log in again.');
     if (!userEmail) throw new Error('User email not found. Please log in again.');
@@ -55,7 +55,6 @@ export const createTask = async (taskData) => {
   }
 };
 
-// Rest of the existing code remains the same...
 export const fetchTasks = async (params = {}) => {
   try {
     const userId = getUserId();

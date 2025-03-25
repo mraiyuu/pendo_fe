@@ -6,10 +6,26 @@
       <button @click="logout" class="logout-btn">Logout</button>
     </header>
 
+    <!-- Search Bar -->
+    <div class="search-container">
+      <div class="search-wrapper">
+        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+        </svg>
+        <input
+          v-model="searchQuery"
+          type="text"
+          placeholder="Search tasks by title or description..."
+          class="search-input"
+        />
+      </div>
+    </div>
+
     <!-- Task List -->
     <section v-if="loading" class="loading">Loading tasks...</section>
-    <section v-else-if="tasks.length" class="task-list">
-      <div v-for="task in tasks" :key="task.task_id" class="task-card" @click="openEditModal(task)">
+    <section v-else-if="filteredTasks.length" class="task-list">
+      <div v-for="task in filteredTasks" :key="task.task_id" class="task-card" @click="openEditModal(task)">
         <div class="task-content">
           <h3>{{ task.title }}</h3>
           <p>{{ task.description }}</p>
@@ -29,11 +45,11 @@
       </div>
     </section>
     <section v-else class="no-tasks">
-      <p>No tasks found. Create your first task!</p>
+      <p>{{ searchQuery ? 'No tasks match your search.' : 'No tasks found. Create your first task!' }}</p>
     </section>
 
     <!-- Pagination -->
-    <footer class="pagination" v-if="!loading && tasks.length">
+    <footer class="pagination" v-if="!loading && tasks.length && !searchQuery">
       <button @click="prevPage" :disabled="page <= 1" class="page-btn">← Prev</button>
       <span>Page {{ page }} of {{ totalPages }}</span>
       <button @click="nextPage" :disabled="page >= totalPages" class="page-btn">Next →</button>
@@ -85,7 +101,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { fetchTasks, createTask, updateTask, deleteTask as apiDeleteTask } from '../api/task';
 import { logoutUser, checkAuthentication, getToken } from '../api/auth';
@@ -102,42 +118,48 @@ const showModal = ref(false);
 const editingTask = ref(null);
 const taskForm = ref({ title: '', description: '', due_date: '' });
 const isAuthenticated = ref(false);
-const errors = ref({}); // To store validation errors
+const errors = ref({});
+const searchQuery = ref('');
+
+// Computed property to filter tasks based on search query
+const filteredTasks = computed(() => {
+  if (!searchQuery.value) {
+    return tasks.value;
+  }
+  const query = searchQuery.value.toLowerCase().trim();
+  return tasks.value.filter(task => 
+    task.title.toLowerCase().includes(query) || 
+    task.description.toLowerCase().includes(query)
+  );
+});
 
 // Format date method
 const formatDate = (dateString) => {
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
 // Validate Task Form
 const validateTaskForm = () => {
   const newErrors = {};
 
-  // Validate title
   if (!taskForm.value.title || taskForm.value.title.trim().length === 0) {
     newErrors.title = 'Title is required';
   } else if (taskForm.value.title.trim().length < 3) {
     newErrors.title = 'Title must be at least 3 characters long';
   }
 
-  // Validate description
   if (!taskForm.value.description || taskForm.value.description.trim().length === 0) {
     newErrors.description = 'Description is required';
   } else if (taskForm.value.description.trim().length < 5) {
     newErrors.description = 'Description must be at least 5 characters long';
   }
 
-  // Validate due_date
   if (!taskForm.value.due_date) {
     newErrors.due_date = 'Due date is required';
   } else {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    today.setHours(0, 0, 0, 0);
     const dueDate = new Date(taskForm.value.due_date);
     if (dueDate < today) {
       newErrors.due_date = 'Due date must be today or in the future';
@@ -145,14 +167,13 @@ const validateTaskForm = () => {
   }
 
   errors.value = newErrors;
-  return Object.keys(newErrors).length === 0; // Return true if no errors
+  return Object.keys(newErrors).length === 0;
 };
 
 // Authentication Check
 const checkAuth = async () => {
   try {
     isAuthenticated.value = checkAuthentication();
-    
     if (isAuthenticated.value) {
       await loadTasks();
     }
@@ -163,41 +184,37 @@ const checkAuth = async () => {
 };
 
 // Navigation Methods
-const navigateToLogin = () => {
-  router.push('/login');
-};
-
-const navigateToRegister = () => {
-  router.push('/register');
-};
+const navigateToLogin = () => router.push('/login');
+const navigateToRegister = () => router.push('/register');
 
 // Load Tasks
 const loadTasks = async () => {
   loading.value = true;
   try {
-    const token = getToken();
-    
-    // Configure axios to use the token
-    const config = {
-      headers: { 
-        Authorization: `Bearer ${token}` 
-      },
-      params: {
-        page: page.value,
-        per_page: 5
-      }
+    const params = {
+      page: page.value,
+      per_page: 10
     };
+    console.log(`Fetching tasks with params:`, params);
+    const response = await fetchTasks(params);
+    console.log('Full API Response:', response);
 
-    const response = await fetchTasks(config);
-    
-    tasks.value = response.tasks || [];
+    if (!response || !response.tasks) {
+      throw new Error('Invalid response format from API');
+    }
+
+    tasks.value = response.tasks;
     totalPages.value = response.pagination?.total_pages || 1;
+
+    console.log(`Loaded ${tasks.value.length} tasks for page ${page.value}. Total pages: ${totalPages.value}`);
+    console.log('Tasks:', tasks.value);
   } catch (error) {
     console.error('Error loading tasks:', error);
-    // Handle authentication errors
-    if (error.response && error.response.status === 401) {
+    if (error.response?.status === 401) {
       logout();
     }
+    tasks.value = [];
+    totalPages.value = 1;
   } finally {
     loading.value = false;
   }
@@ -207,44 +224,36 @@ const loadTasks = async () => {
 const openCreateModal = () => {
   editingTask.value = null;
   taskForm.value = { title: '', description: '', due_date: '' };
-  errors.value = {}; // Clear errors when opening modal
+  errors.value = {};
   showModal.value = true;
 };
 
 const openEditModal = (task) => {
   editingTask.value = task;
   taskForm.value = { ...task };
-  errors.value = {}; // Clear errors when opening modal
+  errors.value = {};
   showModal.value = true;
 };
 
 const closeModal = () => {
   showModal.value = false;
-  errors.value = {}; // Clear errors when closing modal
+  errors.value = {};
 };
 
 // Submit Task
 const submitTask = async () => {
-  // Validate the form
-  if (!validateTaskForm()) {
-    return; // Stop if validation fails
-  }
+  if (!validateTaskForm()) return;
 
   try {
     const token = getToken();
-    const config = {
-      headers: { 
-        Authorization: `Bearer ${token}` 
-      }
-    };
-
+    const config = { headers: { Authorization: `Bearer ${token}` } };
     if (editingTask.value) {
       await updateTask(editingTask.value.task_id, taskForm.value, config);
     } else {
       await createTask(taskForm.value, config);
     }
     closeModal();
-    loadTasks();
+    await loadTasks();
   } catch (error) {
     console.error('Error saving task:', error);
   }
@@ -255,14 +264,9 @@ const deleteTask = async (taskId) => {
   if (confirm('Delete this task?')) {
     try {
       const token = getToken();
-      const config = {
-        headers: { 
-          Authorization: `Bearer ${token}` 
-        }
-      };
-
+      const config = { headers: { Authorization: `Bearer ${token}` } };
       await apiDeleteTask(taskId, config);
-      loadTasks();
+      await loadTasks();
     } catch (error) {
       console.error('Error deleting task:', error);
     }
@@ -280,6 +284,7 @@ const logout = async () => {
 const nextPage = () => {
   if (page.value < totalPages.value) {
     page.value++;
+    console.log('Navigating to next page:', page.value);
     loadTasks();
   }
 };
@@ -287,6 +292,7 @@ const nextPage = () => {
 const prevPage = () => {
   if (page.value > 1) {
     page.value--;
+    console.log('Navigating to previous page:', page.value);
     loadTasks();
   }
 };
@@ -298,16 +304,16 @@ const statusClass = () => 'status';
 // Init
 onMounted(checkAuth);
 
-// Watch for changes in authentication
 watch(isAuthenticated, (newValue) => {
-  if (newValue) {
-    loadTasks();
-  }
+  if (newValue) loadTasks();
+});
+
+watch(page, (newPage) => {
+  console.log('Page state updated to:', newPage);
 });
 </script>
 
 <style scoped>
-/* Reset and Base Styles */
 * {
   margin: 0;
   padding: 0;
@@ -318,7 +324,6 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
 }
 
-/* Layout */
 .dashboard {
   display: flex;
   flex-direction: column;
@@ -328,7 +333,6 @@ body {
   color: #1e293b;
 }
 
-/* Header */
 .header {
   display: flex;
   justify-content: space-between;
@@ -358,7 +362,50 @@ body {
   background: #dc2626;
 }
 
-/* Task List */
+.search-container {
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: center;
+}
+
+.search-wrapper {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 1rem 0.75rem 2.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1rem;
+  color: #1e293b;
+  background: white;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.search-input::placeholder {
+  color: #94a3b8;
+}
+
+.search-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  color: #94a3b8;
+}
+
 .task-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -396,7 +443,6 @@ body {
   line-height: 1.5;
 }
 
-/* Task Footer */
 .task-footer {
   display: flex;
   align-items: center;
@@ -437,7 +483,6 @@ body {
   height: 16px;
 }
 
-/* Pagination */
 .pagination {
   margin-top: 2.5rem;
   display: flex;
@@ -472,7 +517,6 @@ body {
   background: #2563eb;
 }
 
-/* Floating Add Button */
 .fab {
   position: fixed;
   bottom: 2rem;
@@ -496,7 +540,6 @@ body {
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
-/* Modal */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -558,7 +601,6 @@ body {
   resize: vertical;
 }
 
-/* Error Styling */
 .input-error {
   border-color: #ef4444 !important;
 }
@@ -606,7 +648,6 @@ body {
   background: #f1f5f9;
 }
 
-/* No Tasks */
 .no-tasks {
   text-align: center;
   padding: 2rem;
@@ -614,7 +655,6 @@ body {
   font-size: 1.1rem;
 }
 
-/* Loading */
 .loading {
   text-align: center;
   padding: 2rem;
@@ -622,7 +662,6 @@ body {
   font-size: 1.1rem;
 }
 
-/* Login Prompt */
 .login-prompt {
   display: flex;
   flex-direction: column;
@@ -673,7 +712,6 @@ body {
   background: #059669;
 }
 
-/* Responsive Design */
 @media (max-width: 768px) {
   .dashboard {
     padding: 1rem;
@@ -697,6 +735,10 @@ body {
     right: 1.5rem;
     width: 48px;
     height: 48px;
+  }
+
+  .search-wrapper {
+    max-width: 100%;
   }
 }
 
