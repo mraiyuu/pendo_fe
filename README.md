@@ -2,6 +2,12 @@
 
 ## Project setup
 ```
+cp .env.local .env
+
+Have your backend url  on the env, I was using: http://127.0.0.1:8000
+
+Should you have a different endpoint, update appropriately 
+
 npm install
 ```
 
