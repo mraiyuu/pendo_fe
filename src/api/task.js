@@ -78,7 +78,7 @@ export const updateTask = async (id, taskData) => {
     const userId = getUserId();
     if (!userId) throw new Error('User ID not found. Please log in again.');
 
-    const response = await apiClient.put(`/updateTask/${id}`, { user_id: userId, ...taskData }, {
+    const response = await apiClient.patch(`/updateTask`, { user_id: userId, ...taskData }, {
       headers: getAuthHeaders(),
     });
 
